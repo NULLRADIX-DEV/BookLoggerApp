@@ -378,4 +378,9 @@ gha-creds-*.json
 google-services.json
 **/google-services.json
 BookLoggerApp/Platforms/Android/google-services.json
-/graphify-out/cache
+
+# AI work files belong in the private BookLoggerApp-Doc repo
+/graphify-out/
+/.claude/settings.local.json
+/.claude/.superpowers/
+/.claude/docs/
