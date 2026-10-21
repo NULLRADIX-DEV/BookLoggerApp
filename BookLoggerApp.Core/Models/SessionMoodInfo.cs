@@ -13,7 +13,7 @@ public class SessionMoodInfo
     public string Emoji { get; set; } = string.Empty;
     public string Label { get; set; } = string.Empty;
 
-    /// <summary>Chart series theme color for this mood (CLAUDE.md palette).</summary>
+    /// <summary>Chart series color for this mood, from the app.css theme palette.</summary>
     public string ColorHex { get; set; } = string.Empty;
 
     /// <summary>Returns all moods with their metadata.</summary>

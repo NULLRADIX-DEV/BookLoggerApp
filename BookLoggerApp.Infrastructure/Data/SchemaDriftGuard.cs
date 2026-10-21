@@ -17,7 +17,7 @@ public static class SchemaDriftGuard
     /// <summary>
     /// Declarative list of every table the guard repairs, with required columns and (for tables a
     /// migration may have failed to create) the full <c>CREATE TABLE</c> plus optional seed row.
-    /// IMPORTANT: keep in sync when <see cref="UserEntitlementsCreateSql"/> changes — see CLAUDE.md.
+    /// IMPORTANT: keep in sync when <see cref="UserEntitlementsCreateSql"/> changes.
     /// </summary>
     private static readonly IReadOnlyList<ExpectedTable> ExpectedTables = new[]
     {
@@ -109,7 +109,7 @@ public static class SchemaDriftGuard
 
     /// <summary>
     /// Mirrors the <c>CREATE TABLE</c> from migration AddPremiumSubscriptionSystem. Kept as a
-    /// constant so a future schema change is a single-file search target — see CLAUDE.md.
+    /// constant so a future schema change is a single-file search target.
     /// </summary>
     private const string UserEntitlementsCreateSql = """
         CREATE TABLE IF NOT EXISTS "UserEntitlements" (
@@ -138,7 +138,7 @@ public static class SchemaDriftGuard
 
     /// <summary>
     /// Mirrors the <c>CREATE TABLE</c> from migration AddSessionMoodTracking. Kept as a constant
-    /// so a future schema change is a single-file search target — see CLAUDE.md.
+    /// so a future schema change is a single-file search target.
     /// </summary>
     private const string ReadingSessionMoodsCreateSql = """
         CREATE TABLE IF NOT EXISTS "ReadingSessionMoods" (
