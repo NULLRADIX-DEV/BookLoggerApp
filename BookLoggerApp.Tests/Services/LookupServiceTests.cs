@@ -409,6 +409,121 @@ public class LookupServiceTests
         result.Should().BeNull();
     }
 
+    private const string OpenLibrarySearchJson = @"{
+      ""numFound"": 2,
+      ""docs"": [
+        {
+          ""title"": ""Harry Potter 1 und der Stein der Weisen"",
+          ""author_name"": [""J. K. Rowling""],
+          ""edition_count"": 1,
+          ""isbn"": [""3551557411"", ""9783551557414""],
+          ""publisher"": [""Carlsen Verlag GmbH""],
+          ""number_of_pages_median"": 336,
+          ""first_publish_year"": 2018,
+          ""cover_i"": 10565554,
+          ""subject"": [""series:Harry_Potter"", ""Fantasy""]
+        },
+        {
+          ""title"": ""Harry Potter and the Philosopher's Stone"",
+          ""author_name"": [""J. K. Rowling""],
+          ""edition_count"": 412,
+          ""isbn"": [""2075094454"", ""9781408855652""],
+          ""publisher"": [""Alma Littera""],
+          ""first_publish_year"": 1997
+        }
+      ]
+    }";
+
+    [Fact]
+    public async Task SearchBooksAsync_GoogleQuotaExhausted_FallsBackToOpenLibrary()
+    {
+        string? openLibraryQuery = null;
+        string? userAgent = null;
+        var mockHandler = new MockHttpMessageHandler((r) =>
+        {
+            if (IsOpenLibrary(r))
+            {
+                r.RequestUri!.AbsolutePath.Should().Be("/search.json");
+                openLibraryQuery = System.Web.HttpUtility.ParseQueryString(r.RequestUri.Query)["q"];
+                userAgent = r.Headers.UserAgent.ToString();
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(OpenLibrarySearchJson) };
+            }
+            return new HttpResponseMessage(HttpStatusCode.TooManyRequests) { Content = new StringContent(GoogleDailyQuotaBody) };
+        });
+        var service = new LookupService(
+            new HttpClient(mockHandler), googleBooksApiKey: "", retryDelaysMs: [0, 0, 0]);
+
+        var results = await service.SearchBooksAsync("Harry Potter & Stein");
+
+        openLibraryQuery.Should().Be("Harry Potter & Stein");
+        userAgent.Should().Contain("BookHeart");
+        results.Should().HaveCount(2);
+
+        var single = results[0];
+        single.Title.Should().Be("Harry Potter 1 und der Stein der Weisen");
+        single.Author.Should().Be("J. K. Rowling");
+        single.ISBN.Should().Be("9783551557414");
+        single.Publisher.Should().Be("Carlsen Verlag GmbH");
+        single.PageCount.Should().Be(336);
+        single.PublicationYear.Should().Be(2018);
+        single.CoverImageUrl.Should().Be("https://covers.openlibrary.org/b/id/10565554-L.jpg");
+        single.Categories.Should().Equal("Fantasy");
+
+        // A work with many editions: ISBN/publisher of a random edition would be wrong, so leave them out.
+        var multi = results[1];
+        multi.ISBN.Should().BeEmpty();
+        multi.Publisher.Should().BeNull();
+        multi.CoverImageUrl.Should().BeNull();
+        multi.PublicationYear.Should().Be(1997);
+    }
+
+    [Fact]
+    public async Task SearchBooksAsync_GoogleHasNoResults_UsesOpenLibrary()
+    {
+        var mockHandler = new MockHttpMessageHandler((r) => IsOpenLibrary(r)
+            ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(OpenLibrarySearchJson) }
+            : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(@"{""totalItems"": 0}") });
+        var service = new LookupService(new HttpClient(mockHandler), googleBooksApiKey: "");
+
+        var results = await service.SearchBooksAsync("Harry Potter");
+
+        results.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task SearchBooksAsync_GoogleSucceeds_DoesNotCallOpenLibrary()
+    {
+        var openLibraryCalled = false;
+        var json = @"{ ""items"": [ { ""volumeInfo"": { ""title"": ""From Google"", ""authors"": [""A""] } } ] }";
+        var mockHandler = new MockHttpMessageHandler((r) =>
+        {
+            if (IsOpenLibrary(r))
+                openLibraryCalled = true;
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json) };
+        });
+        var service = new LookupService(new HttpClient(mockHandler), googleBooksApiKey: "");
+
+        var results = await service.SearchBooksAsync("anything");
+
+        results.Should().ContainSingle().Which.Title.Should().Be("From Google");
+        openLibraryCalled.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task SearchBooksAsync_BothSourcesFail_RethrowsGoogleError()
+    {
+        var mockHandler = new MockHttpMessageHandler((r) => IsOpenLibrary(r)
+            ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) { Content = new StringContent("down") }
+            : new HttpResponseMessage(HttpStatusCode.TooManyRequests) { Content = new StringContent(GoogleDailyQuotaBody) });
+        var service = new LookupService(
+            new HttpClient(mockHandler), googleBooksApiKey: "", retryDelaysMs: [0, 0, 0]);
+
+        Func<Task> act = async () => await service.SearchBooksAsync("anything");
+
+        var ex = await act.Should().ThrowAsync<HttpRequestException>();
+        ex.Which.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+    }
+
     [Theory]
     [InlineData("2000", 2000)]
     [InlineData("March 5, 2011", 2011)]

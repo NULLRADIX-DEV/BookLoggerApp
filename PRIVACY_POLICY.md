@@ -16,13 +16,13 @@ BookHeart requests camera access solely for scanning book barcodes (ISBN). No ph
 
 ## Network Usage
 
-When you look up a book by ISBN, BookHeart sends the ISBN number to the Google Books API to retrieve book metadata (title, author, cover image). If Google Books is unavailable or doesn't know the ISBN, the ISBN is sent to Open Library instead. No personal data or device identifiers are included in these requests. The app functions fully offline without this feature.
+When you look up a book by ISBN, BookHeart sends the ISBN number to the Google Books API to retrieve book metadata (title, author, cover image). If Google Books is unavailable or doesn't know the ISBN, the ISBN is sent to Open Library instead. The title search works the same way with the entered title and author. No personal data or device identifiers are included in these requests. The app functions fully offline without this feature.
 
 ## Third-Party Services
 
 BookHeart uses the following third-party services:
 
-1. **Google Books API and Open Library** (optional, ISBN lookup only) — metadata retrieval (title, author, cover). Open Library (operated by the Internet Archive) is only asked when Google Books fails or has no result. No personal data transmitted.
+1. **Google Books API and Open Library** (optional, ISBN lookup and title search only) — metadata retrieval (title, author, cover). Open Library (operated by the Internet Archive) is only asked when Google Books fails or has no result. No personal data transmitted.
 
 2. **Firebase Analytics** (Android only, enabled by default, can be disabled under Settings → Datenschutz) — anonymous usage statistics. Never transmits book titles, authors, ISBNs, quotes, annotations, personal notes, exact dates or exact values; only bucketed figures like "book count (6-20)". Android Advertising ID and Android ID are explicitly disabled.
 
