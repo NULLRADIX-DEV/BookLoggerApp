@@ -1,6 +1,6 @@
 # BookHeart – Datenschutzerklärung
 
-**Zuletzt aktualisiert:** Februar 2026
+**Zuletzt aktualisiert:** Oktober 2026
 
 ## Überblick
 
@@ -16,13 +16,13 @@ BookHeart fordert den Zugriff auf die Kamera ausschließlich zum Scannen von Buc
 
 ## Netzwerknutzung
 
-Bei der Suche nach einem Buch über die ISBN-Nummer sendet BookHeart diese an die Google Books API, um Buchmetadaten (Titel, Autor, Coverbild) abzurufen. Dabei werden keinerlei personenbezogene Daten oder Gerätekennungen übermittelt. Die App ist auch ohne diese Funktion vollständig offline nutzbar.
+Bei der Suche nach einem Buch über die ISBN-Nummer sendet BookHeart diese an die Google Books API, um Buchmetadaten (Titel, Autor, Coverbild) abzurufen. Ist Google Books nicht erreichbar oder kennt die ISBN nicht, geht die ISBN stattdessen an Open Library. Dabei werden keinerlei personenbezogene Daten oder Gerätekennungen übermittelt. Die App ist auch ohne diese Funktion vollständig offline nutzbar.
 
 ## Drittanbieterdienste
 
 BookHeart nutzt folgende externe Dienste:
 
-1. **Google Books API** (optional, nur bei ISBN-Suche) — Abruf von Metadaten (Titel, Autor, Cover). Keine personenbezogenen Daten werden übertragen.
+1. **Google Books API und Open Library** (optional, nur bei ISBN-Suche) — Abruf von Metadaten (Titel, Autor, Cover). Open Library (betrieben vom Internet Archive) wird nur gefragt, wenn Google Books fehlschlägt oder nichts findet. Keine personenbezogenen Daten werden übertragen.
 
 2. **Firebase Analytics** (nur Android, standardmäßig AKTIVIERT, unter Settings → Datenschutz deaktivierbar) — anonyme Nutzungsstatistiken. Es werden keine Buchtitel, Autoren, ISBNs, Zitate, Annotationen, persönliche Notizen, exakte Daten oder exakte Werte übertragen, sondern nur grob zusammengefasste Kennzahlen wie „Anzahl Bücher (Bucket 6-20)". Die Android Advertising ID und die Android ID sind ausdrücklich deaktiviert.
 

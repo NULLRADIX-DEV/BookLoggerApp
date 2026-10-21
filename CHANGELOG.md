@@ -12,6 +12,12 @@ Versionsschema:
 - MAJOR wird auf 1 gesetzt wenn der erste public Play-Store-Upload erfolgt
 - MINOR für neue Features, PATCH für Bugfixes und kleinere Änderungen
 
+## [Unveröffentlicht]
+
+### Behoben
+- ISBN-Scan und ISBN-Suche schlugen mit „Google-Books-API-Kontingent erreicht" fehl, sobald Googles Tageskontingent aufgebraucht war. Findet Google Books nichts oder ist nicht erreichbar, fragt die App jetzt Open Library ab
+- Bei aufgebrauchtem Tageskontingent wartet die Suche nicht mehr rund 20 Sekunden auf sinnlose Wiederholungsversuche
+
 ## [1.0.3]
 
 ### Hinzugefügt
