@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+Rules shared by all Nullradix projects live in the private neighbour repo `../Nullradix-Doc`; this file only adds what BookLoggerApp needs.
+
+@../Nullradix-Doc/Regeln.md
+
 ## Project Overview
 
 BookLoggerApp (branded as **BookHeart**) is a .NET 10 MAUI Blazor Hybrid Android app for managing and tracking books. It uses Entity Framework Core with SQLite for local data storage and follows a layered architecture with Repository and Unit of Work patterns. It includes gamification features (XP/levels, plant growing, decoration shop, shelf decorations); the XP/level progression math lives in `BookLoggerApp.Core/Helpers/XpCalculator.cs`.
@@ -508,7 +512,6 @@ Nach jeder Änderung (Feature, Bugfix, Sicherheitspatch) einen Eintrag in `CHANG
 
 ## Important Notes
 
-- **Kein `git push` ohne explizite Aufforderung.** Lokale Commits sind erlaubt, aber niemals pushen — nur wenn der User es ausdrücklich verlangt.
 - Main branch for PRs: `main`
 - Development uses versioned feature branches (`V1`, `V2`, ... `V6`)
 - App name displayed on device: "BookHeart" (configured in `BookLoggerApp.csproj` as `ApplicationTitle`)
