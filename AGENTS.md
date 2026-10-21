@@ -1,6 +1,6 @@
 # AGENTS.md
 
-See `CLAUDE.md` for comprehensive project documentation including architecture, patterns, templates, and localization.
+Comprehensive project documentation including architecture, patterns, templates, and localization lives in the private repo `NULLRADIX-DEV/BookLoggerApp-Doc` (`CLAUDE-intern.md`), cloned next to this one.
 
 ## Cursor Cloud specific instructions
 
@@ -38,4 +38,4 @@ No standalone linter is configured. Build warnings serve as the lint mechanism �
 
 - The `.editorconfig` enforces LF line endings. Ensure any new files use LF, not CRLF.
 - Tests pin `CultureInfo` to `InvariantCulture` via a `[ModuleInitializer]` in `TestHelpers/TestStringLocalizer.cs` to avoid locale-dependent failures.
-- `DatabaseInitializationHelper.MarkAsInitialized()` must be called in ViewModel test constructors — see patterns in `CLAUDE.md`.
+- `DatabaseInitializationHelper.MarkAsInitialized()` must be called in ViewModel test constructors — see patterns in `../BookLoggerApp-Doc/CLAUDE-intern.md`.
