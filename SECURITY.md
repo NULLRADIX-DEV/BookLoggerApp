@@ -1,6 +1,6 @@
 # BookHeart – Privacy Policy
 
-**Last updated:** May 2026
+**Last updated:** October 2026
 
 ## Overview
 
@@ -16,13 +16,13 @@ BookHeart requests access to the camera solely for scanning book barcodes (ISBN)
 
 ## Network Usage
 
-When searching for a book by ISBN, BookHeart sends the ISBN to the Google Books API in order to retrieve book metadata (title, author, cover image). No personal data or device identifiers are transmitted in this process. The app remains fully usable offline without this feature.
+When searching for a book by ISBN, BookHeart sends the ISBN to the Google Books API in order to retrieve book metadata (title, author, cover image). If Google Books is unavailable or doesn't know the ISBN, the ISBN is sent to Open Library instead. No personal data or device identifiers are transmitted in this process. The app remains fully usable offline without this feature.
 
 ## Third-Party Services
 
 BookHeart uses the following third-party services:
 
-1. **Google Books API** (optional, only for ISBN lookup): The scanned or manually entered ISBN is sent to `googleapis.com/books/v1/volumes` in order to retrieve metadata (title, author, cover image). No personal data is transmitted.
+1. **Google Books API and Open Library** (optional, only for ISBN lookup): The scanned or manually entered ISBN is sent to `googleapis.com/books/v1/volumes` in order to retrieve metadata (title, author, cover image). Only if that fails or finds nothing, the ISBN is sent to `openlibrary.org/api/books` (operated by the Internet Archive); covers then load from `covers.openlibrary.org`. No personal data is transmitted.
 
 2. **Firebase Analytics** (Android only, enabled by default, can be disabled at any time under Settings → Datenschutz): Sends anonymous usage statistics to Google in order to help us understand which features are being used. **Never** transmits book titles, authors, ISBNs, quotes, annotations, personal notes or any other personal data — only coarse, bucketed figures such as "book count (6-20)" or "current level (11-20)". The Android Advertising ID and Android ID are explicitly disabled in our Firebase configuration.
 
@@ -48,7 +48,7 @@ If you have any questions about this privacy policy, you can open an issue in ou
 
 # BookHeart – Datenschutzerklärung
 
-**Zuletzt aktualisiert:** May 2026
+**Zuletzt aktualisiert:** Oktober 2026
 
 ## Überblick
 
@@ -64,13 +64,13 @@ BookHeart fordert den Zugriff auf die Kamera ausschließlich zum Scannen von Buc
 
 ## Netzwerknutzung
 
-Bei der Suche nach einem Buch über die ISBN-Nummer sendet BookHeart diese an die Google Books API, um Buchmetadaten (Titel, Autor, Coverbild) abzurufen. Dabei werden keinerlei personenbezogene Daten oder Gerätekennungen übermittelt. Die App ist auch ohne diese Funktion vollständig offline nutzbar.
+Bei der Suche nach einem Buch über die ISBN-Nummer sendet BookHeart diese an die Google Books API, um Buchmetadaten (Titel, Autor, Coverbild) abzurufen. Ist Google Books nicht erreichbar oder kennt die ISBN nicht, geht die ISBN stattdessen an Open Library. Dabei werden keinerlei personenbezogene Daten oder Gerätekennungen übermittelt. Die App ist auch ohne diese Funktion vollständig offline nutzbar.
 
 ## Drittanbieterdienste
 
 BookHeart nutzt folgende externe Dienste:
 
-1. **Google Books API** (optional, nur bei ISBN-Suche): Die gescannte oder manuell eingegebene ISBN wird an `googleapis.com/books/v1/volumes` gesendet, um Metadaten (Titel, Autor, Cover) abzurufen. Keine personenbezogenen Daten werden übertragen.
+1. **Google Books API und Open Library** (optional, nur bei ISBN-Suche): Die gescannte oder manuell eingegebene ISBN wird an `googleapis.com/books/v1/volumes` gesendet, um Metadaten (Titel, Autor, Cover) abzurufen. Nur wenn das fehlschlägt oder nichts findet, geht die ISBN an `openlibrary.org/api/books` (betrieben vom Internet Archive); Cover kommen dann von `covers.openlibrary.org`. Keine personenbezogenen Daten werden übertragen.
 
 2. **Firebase Analytics** (nur Android, standardmäßig AKTIVIERT, jederzeit unter Einstellungen → Datenschutz deaktivierbar): Sendet anonyme Nutzungsstatistiken an Google, damit wir verstehen, welche Funktionen genutzt werden. Es werden **keine** Buchtitel, Autoren, ISBNs, Zitate, Annotationen, persönliche Notizen oder andere personenbezogene Daten übertragen — nur grob zusammengefasste Kennzahlen wie „Anzahl Bücher (Bucket 6-20)" oder „aktuelles Level (Bucket 11-20)". Die Android Advertising ID und die Android ID sind in unserer Firebase-Konfiguration ausdrücklich deaktiviert.
 

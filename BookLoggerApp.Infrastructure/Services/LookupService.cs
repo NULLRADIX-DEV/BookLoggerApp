@@ -1,16 +1,22 @@
 using System.Net;
+using System.Runtime.ExceptionServices;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using BookLoggerApp.Core.Services.Abstractions;
 using Microsoft.Extensions.Logging;
 
 namespace BookLoggerApp.Infrastructure.Services;
 
 /// <summary>
-/// Service for looking up book metadata from Google Books API.
+/// Service for looking up book metadata from Google Books API, with Open Library as ISBN fallback.
 /// </summary>
-public class LookupService : ILookupService
+public partial class LookupService : ILookupService
 {
     private const string GoogleBooksApiBaseUrl = "https://www.googleapis.com/books/v1/volumes";
+    private const string OpenLibraryApiBaseUrl = "https://openlibrary.org/api/books";
+    // Open Library asks clients to identify themselves and grants identified apps a higher rate limit.
+    private const string OpenLibraryUserAgent = "BookHeart (+https://github.com/NULLRADIX-DEV/BookLoggerApp)";
     private static readonly int[] DefaultRetryDelaysMs = [1000, 3000, 6000];
 
     // Transient HTTP statuses worth retrying: request timeout, rate limiting, and
@@ -30,6 +36,7 @@ public class LookupService : ILookupService
     private const string RateLimitKeyword = "rateLimitExceeded";
     private const string DailyLimitKeyword = "dailyLimitExceeded";
     private const string ResourceExhaustedKeyword = "RESOURCE_EXHAUSTED";
+    private const string PerDayKeyword = "per day";
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
@@ -68,22 +75,88 @@ public class LookupService : ILookupService
 
         _logger?.LogInformation("Looking up book by ISBN: {ISBN}", isbn);
 
+        // Google first. If it fails (quota, outage) or doesn't know the ISBN, ask Open Library.
+        BookMetadata? metadata = null;
+        Exception? googleError = null;
+        try
+        {
+            metadata = await LookupGoogleBooksByIsbnAsync(isbn, ct);
+        }
+        catch (Exception ex) when (IsLookupFailure(ex, ct))
+        {
+            _logger?.LogWarning(ex, "Google Books lookup failed for ISBN {ISBN}, trying Open Library", isbn);
+            googleError = ex;
+        }
+
+        metadata ??= await TryLookupOpenLibraryByIsbnAsync(isbn, ct);
+
+        if (metadata != null)
+        {
+            _logger?.LogInformation("Found book: {Title} by {Author}", metadata.Title, metadata.Author);
+            return metadata;
+        }
+
+        // Surface Google's error so the UI can still tell "offline" / "quota" apart from "not found".
+        if (googleError != null)
+            ExceptionDispatchInfo.Throw(googleError);
+
+        _logger?.LogInformation("No results found for ISBN: {ISBN}", isbn);
+        return null;
+    }
+
+    private async Task<BookMetadata?> LookupGoogleBooksByIsbnAsync(string isbn, CancellationToken ct)
+    {
         var queryParams = $"q=isbn:{Uri.EscapeDataString(isbn)}";
         var searchResult = await GetWithRetryAsync<GoogleBooksSearchResult>(queryParams, ct);
 
         if (searchResult?.Items == null || searchResult.Items.Count == 0)
+            return null;
+
+        return MapToBookMetadata(searchResult.Items[0].VolumeInfo, isbn);
+    }
+
+    private async Task<BookMetadata?> TryLookupOpenLibraryByIsbnAsync(string isbn, CancellationToken ct)
+    {
+        // isbn is already validated to digits/'X', so it's safe to put into the URL as-is.
+        var bibKey = $"ISBN:{isbn}";
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get, $"{OpenLibraryApiBaseUrl}?bibkeys={bibKey}&format=json&jscmd=data");
+        request.Headers.UserAgent.ParseAdd(OpenLibraryUserAgent);
+
+        try
         {
-            _logger?.LogInformation("No results found for ISBN: {ISBN}", isbn);
+            using var response = await _httpClient.SendAsync(request, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger?.LogWarning("Open Library lookup failed with status {StatusCode}", (int)response.StatusCode);
+                return null;
+            }
+
+            var json = await response.Content.ReadAsStringAsync(ct);
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object ||
+                !doc.RootElement.TryGetProperty(bibKey, out var element))
+            {
+                return null;
+            }
+
+            var book = element.Deserialize<OpenLibraryBook>(JsonOptions);
+            if (book == null || string.IsNullOrWhiteSpace(book.Title))
+                return null;
+
+            return MapOpenLibraryToBookMetadata(book, isbn);
+        }
+        catch (Exception ex) when (IsLookupFailure(ex, ct))
+        {
+            _logger?.LogWarning(ex, "Open Library lookup failed for ISBN {ISBN}", isbn);
             return null;
         }
-
-        var volumeInfo = searchResult.Items[0].VolumeInfo;
-        var metadata = MapToBookMetadata(volumeInfo, isbn);
-
-        _logger?.LogInformation("Found book: {Title} by {Author}", metadata.Title, metadata.Author);
-
-        return metadata;
     }
+
+    // Network errors, bad payloads and HttpClient timeouts — but never a caller-requested cancel.
+    private static bool IsLookupFailure(Exception ex, CancellationToken ct) =>
+        ex is HttpRequestException or JsonException ||
+        (ex is TaskCanceledException && !ct.IsCancellationRequested);
 
     public async Task<IReadOnlyList<BookMetadata>> SearchBooksAsync(string query, CancellationToken ct = default)
     {
@@ -185,7 +258,7 @@ public class LookupService : ILookupService
     {
         var response = await _httpClient.GetAsync(url, ct);
 
-        for (int i = 0; i < _retryDelaysMs.Length && IsTransientStatus(response.StatusCode); i++)
+        for (int i = 0; i < _retryDelaysMs.Length && await ShouldRetryAsync(response, ct); i++)
         {
             _logger?.LogWarning(
                 "Retry {RetryCount}/{MaxRetries} after transient status {StatusCode}",
@@ -198,8 +271,20 @@ public class LookupService : ILookupService
         return response;
     }
 
-    private static bool IsTransientStatus(HttpStatusCode statusCode) =>
-        Array.IndexOf(TransientStatusCodes, statusCode) >= 0;
+    private static async Task<bool> ShouldRetryAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        if (Array.IndexOf(TransientStatusCodes, response.StatusCode) < 0)
+            return false;
+
+        if (response.StatusCode != HttpStatusCode.TooManyRequests)
+            return true;
+
+        // A per-minute limit clears during the backoff, a daily quota doesn't — retrying that
+        // just keeps the user staring at a spinner for ~10s before the same error.
+        var body = await response.Content.ReadAsStringAsync(ct);
+        return !body.Contains(PerDayKeyword, StringComparison.OrdinalIgnoreCase) &&
+               !body.Contains(DailyLimitKeyword, StringComparison.OrdinalIgnoreCase);
+    }
 
     private static bool IsQuotaOrRateLimitError(HttpStatusCode statusCode, string body)
     {
@@ -257,6 +342,42 @@ public class LookupService : ILookupService
         };
     }
 
+    private static BookMetadata MapOpenLibraryToBookMetadata(OpenLibraryBook book, string isbn)
+    {
+        int? publicationYear = null;
+        if (!string.IsNullOrWhiteSpace(book.PublishDate))
+        {
+            // publish_date is free text ("2000", "March 5, 2011", "c1999").
+            var match = FourDigitYearRegex().Match(book.PublishDate);
+            if (match.Success)
+                publicationYear = int.Parse(match.Value);
+        }
+
+        return new BookMetadata
+        {
+            Title = book.Title ?? string.Empty,
+            Author = book.Authors is { Count: > 0 }
+                ? string.Join(", ", book.Authors.Select(a => a.Name).Where(n => !string.IsNullOrWhiteSpace(n)))
+                : string.Empty,
+            ISBN = isbn,
+            PageCount = book.NumberOfPages,
+            Publisher = book.Publishers?.Select(p => p.Name).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)),
+            PublicationYear = publicationYear,
+            CoverImageUrl = book.Cover?.Large ?? book.Cover?.Medium ?? book.Cover?.Small,
+            // Skip machine tags like "series:Harry_Potter"; they'd only confuse the genre matching.
+            Categories = book.Subjects?
+                .Select(s => s.Name)
+                .OfType<string>()
+                .Where(n => !string.IsNullOrWhiteSpace(n) && !n.Contains(':'))
+                .Take(10)
+                .ToList()
+                ?? new List<string>()
+        };
+    }
+
+    [GeneratedRegex(@"(?<!\d)\d{4}(?!\d)")]
+    private static partial Regex FourDigitYearRegex();
+
     // Google Books API response models
     private class GoogleBooksSearchResult
     {
@@ -293,5 +414,31 @@ public class LookupService : ILookupService
     {
         public string? Thumbnail { get; set; }
         public string? SmallThumbnail { get; set; }
+    }
+
+    // Open Library Books API (jscmd=data) response models
+    private class OpenLibraryBook
+    {
+        public string? Title { get; set; }
+        public List<OpenLibraryNamed>? Authors { get; set; }
+        public List<OpenLibraryNamed>? Publishers { get; set; }
+        public List<OpenLibraryNamed>? Subjects { get; set; }
+        [JsonPropertyName("number_of_pages")]
+        public int? NumberOfPages { get; set; }
+        [JsonPropertyName("publish_date")]
+        public string? PublishDate { get; set; }
+        public OpenLibraryCover? Cover { get; set; }
+    }
+
+    private class OpenLibraryNamed
+    {
+        public string? Name { get; set; }
+    }
+
+    private class OpenLibraryCover
+    {
+        public string? Small { get; set; }
+        public string? Medium { get; set; }
+        public string? Large { get; set; }
     }
 }

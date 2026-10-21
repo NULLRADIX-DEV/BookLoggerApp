@@ -225,6 +225,9 @@ public class LookupServiceTests
         var requestCount = 0;
         var mockHandler = new MockHttpMessageHandler((request) =>
         {
+            if (IsOpenLibrary(request))
+                return OpenLibraryEmpty();
+
             requestCount++;
             var query = System.Web.HttpUtility.ParseQueryString(request.RequestUri!.Query);
             query["key"].Should().Be("test-api-key");
@@ -256,6 +259,172 @@ public class LookupServiceTests
         {
             return Task.FromResult(_sendAsync(request));
         }
+    }
+
+    private static bool IsOpenLibrary(HttpRequestMessage request) =>
+        request.RequestUri!.Host == "openlibrary.org";
+
+    private static HttpResponseMessage OpenLibraryEmpty() =>
+        new(HttpStatusCode.OK) { Content = new StringContent("{}") };
+
+    private const string GoogleDailyQuotaBody =
+        @"{""error"":{""code"":429,""message"":""Quota exceeded for quota metric 'Queries' and limit 'Queries per day' of service 'books.googleapis.com'"",""status"":""RESOURCE_EXHAUSTED""}}";
+
+    private const string OpenLibraryHarryPotterJson = @"{
+      ""ISBN:9783551551672"": {
+        ""title"": ""Harry Potter und der Stein der Weisen"",
+        ""authors"": [ { ""name"": ""J. K. Rowling"" } ],
+        ""number_of_pages"": 335,
+        ""publishers"": [ { ""name"": ""Carlsen"" } ],
+        ""publish_date"": ""March 2000"",
+        ""subjects"": [ { ""name"": ""series:Harry_Potter"" }, { ""name"": ""Fantasy"" } ],
+        ""cover"": {
+          ""small"": ""https://covers.openlibrary.org/b/id/14320055-S.jpg"",
+          ""medium"": ""https://covers.openlibrary.org/b/id/14320055-M.jpg"",
+          ""large"": ""https://covers.openlibrary.org/b/id/14320055-L.jpg""
+        }
+      }
+    }";
+
+    [Fact]
+    public async Task LookupByISBNAsync_DailyQuota429_DoesNotRetryAndFallsBackToOpenLibrary()
+    {
+        var googleCalls = 0;
+        string? userAgent = null;
+        var mockHandler = new MockHttpMessageHandler((r) =>
+        {
+            if (IsOpenLibrary(r))
+            {
+                userAgent = r.Headers.UserAgent.ToString();
+                r.RequestUri!.Query.Should().Contain("bibkeys=ISBN:9783551551672");
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(OpenLibraryHarryPotterJson) };
+            }
+
+            googleCalls++;
+            return new HttpResponseMessage(HttpStatusCode.TooManyRequests) { Content = new StringContent(GoogleDailyQuotaBody) };
+        });
+        var service = new LookupService(
+            new HttpClient(mockHandler), googleBooksApiKey: "test-key", retryDelaysMs: [0, 0, 0]);
+
+        var result = await service.LookupByISBNAsync("978-3-551-55167-2");
+
+        // Key attempt + anonymous attempt, no retries: a daily quota won't reset during backoff.
+        googleCalls.Should().Be(2);
+        userAgent.Should().Contain("BookHeart");
+        result.Should().NotBeNull();
+        result!.Title.Should().Be("Harry Potter und der Stein der Weisen");
+        result.Author.Should().Be("J. K. Rowling");
+        result.ISBN.Should().Be("9783551551672");
+        result.PageCount.Should().Be(335);
+        result.Publisher.Should().Be("Carlsen");
+        result.PublicationYear.Should().Be(2000);
+        result.CoverImageUrl.Should().Be("https://covers.openlibrary.org/b/id/14320055-L.jpg");
+        result.Categories.Should().Equal("Fantasy");
+    }
+
+    [Fact]
+    public async Task LookupByISBNAsync_PerMinuteRateLimit429_IsStillRetried()
+    {
+        var googleCalls = 0;
+        var json = @"{ ""items"": [ { ""volumeInfo"": { ""title"": ""Recovered"", ""authors"": [""A""] } } ] }";
+        var mockHandler = new MockHttpMessageHandler((r) =>
+        {
+            googleCalls++;
+            if (googleCalls == 1)
+            {
+                return new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+                {
+                    Content = new StringContent(@"{""error"":{""message"":""Quota exceeded for quota metric 'Queries' and limit 'Queries per minute per user'""}}")
+                };
+            }
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json) };
+        });
+        var service = new LookupService(
+            new HttpClient(mockHandler), googleBooksApiKey: "", retryDelaysMs: [0, 0, 0]);
+
+        var result = await service.LookupByISBNAsync("9780140449136");
+
+        result!.Title.Should().Be("Recovered");
+        googleCalls.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task LookupByISBNAsync_GoogleHasNoResult_UsesOpenLibrary()
+    {
+        var mockHandler = new MockHttpMessageHandler((r) => IsOpenLibrary(r)
+            ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(OpenLibraryHarryPotterJson) }
+            : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(@"{""totalItems"": 0}") });
+        var service = new LookupService(new HttpClient(mockHandler), googleBooksApiKey: "");
+
+        var result = await service.LookupByISBNAsync("9783551551672");
+
+        result.Should().NotBeNull();
+        result!.Publisher.Should().Be("Carlsen");
+    }
+
+    [Fact]
+    public async Task LookupByISBNAsync_GoogleSucceeds_DoesNotCallOpenLibrary()
+    {
+        var openLibraryCalled = false;
+        var json = @"{ ""items"": [ { ""volumeInfo"": { ""title"": ""From Google"", ""authors"": [""A""] } } ] }";
+        var mockHandler = new MockHttpMessageHandler((r) =>
+        {
+            if (IsOpenLibrary(r))
+                openLibraryCalled = true;
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json) };
+        });
+        var service = new LookupService(new HttpClient(mockHandler), googleBooksApiKey: "");
+
+        var result = await service.LookupByISBNAsync("9780140449136");
+
+        result!.Title.Should().Be("From Google");
+        openLibraryCalled.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task LookupByISBNAsync_BothSourcesFail_RethrowsGoogleError()
+    {
+        var mockHandler = new MockHttpMessageHandler((r) => IsOpenLibrary(r)
+            ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) { Content = new StringContent("down") }
+            : new HttpResponseMessage(HttpStatusCode.TooManyRequests) { Content = new StringContent(GoogleDailyQuotaBody) });
+        var service = new LookupService(
+            new HttpClient(mockHandler), googleBooksApiKey: "", retryDelaysMs: [0, 0, 0]);
+
+        Func<Task> act = async () => await service.LookupByISBNAsync("9780140449136");
+
+        var ex = await act.Should().ThrowAsync<HttpRequestException>();
+        ex.Which.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+    }
+
+    [Fact]
+    public async Task LookupByISBNAsync_BothSourcesEmpty_ReturnsNull()
+    {
+        var mockHandler = new MockHttpMessageHandler((r) => IsOpenLibrary(r)
+            ? OpenLibraryEmpty()
+            : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(@"{""totalItems"": 0}") });
+        var service = new LookupService(new HttpClient(mockHandler), googleBooksApiKey: "");
+
+        var result = await service.LookupByISBNAsync("9780140449136");
+
+        result.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("2000", 2000)]
+    [InlineData("March 5, 2011", 2011)]
+    [InlineData("c1999", 1999)]
+    [InlineData("unknown", null)]
+    public async Task LookupByISBNAsync_OpenLibraryPublishDate_ExtractsYear(string publishDate, int? expectedYear)
+    {
+        var json = $@"{{ ""ISBN:9780140449136"": {{ ""title"": ""T"", ""publish_date"": ""{publishDate}"" }} }}";
+        var mockHandler = new MockHttpMessageHandler((r) => IsOpenLibrary(r)
+            ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json) }
+            : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") });
+        var service = new LookupService(new HttpClient(mockHandler), googleBooksApiKey: "");
+
+        var result = await service.LookupByISBNAsync("9780140449136");
+
+        result!.PublicationYear.Should().Be(expectedYear);
     }
 
     [Fact]
@@ -447,6 +616,9 @@ public class LookupServiceTests
         var requestCount = 0;
         var mockHandler = new MockHttpMessageHandler((r) =>
         {
+            if (IsOpenLibrary(r))
+                return OpenLibraryEmpty();
+
             requestCount++;
             return new HttpResponseMessage(HttpStatusCode.InternalServerError)
             {
@@ -520,6 +692,9 @@ public class LookupServiceTests
         var requestCount = 0;
         var mockHandler = new MockHttpMessageHandler((r) =>
         {
+            if (IsOpenLibrary(r))
+                return OpenLibraryEmpty();
+
             requestCount++;
             return new HttpResponseMessage(HttpStatusCode.BadRequest)
             {
